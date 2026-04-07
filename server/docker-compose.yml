@@ -1,0 +1,13 @@
+services:
+  game-server:
+    build: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - TICK_RATE=20
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"

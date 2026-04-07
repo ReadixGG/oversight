@@ -1,0 +1,75 @@
+keys,en,ru
+GAME_TITLE,OverSight,OverSight
+BTN_PLAY,Play,Играть
+BTN_PROFILE,Profile,Профиль
+BTN_FRIENDS,Friends,Друзья
+BTN_SETTINGS,Settings,Настройки
+BTN_FIND_MATCH,Find Match,Найти матч
+BTN_CANCEL,Cancel,Отмена
+BTN_BACK,Back,Назад
+BTN_CONFIRM,Confirm,Подтвердить
+BTN_READY,Ready,Готов
+SEARCHING_MATCH,Searching for match...,Поиск матча...
+MATCH_FOUND,Match found!,Матч найден!
+ESTIMATED_WAIT,Estimated wait:,Примерное ожидание:
+SELECT_CLASS,Select your class,Выберите класс
+CLASS_COLLECTOR,Collector,Сборщик
+CLASS_DEFENDER,Defender,Защищающий
+CLASS_ATTACKER,Attacker,Атакующий
+CLASS_COLLECTOR_DESC,Gathers resources and delivers them to base. Fast but fragile.,Собирает ресурсы и доставляет на базу. Быстрый но хрупкий.
+CLASS_DEFENDER_DESC,Builds fortifications and protects the base. Balanced stats.,Строит укрепления и защищает базу. Сбалансированные характеристики.
+CLASS_ATTACKER_DESC,Hunts enemies and destroys their infrastructure. High damage.,Охотится на врагов и разрушает инфраструктуру. Высокий урон.
+TEAM_ALPHA,Team Alpha,Команда Альфа
+TEAM_BRAVO,Team Bravo,Команда Браво
+ROUND_LABEL,Round,Раунд
+ROUND_WON,Round won!,Раунд выигран!
+ROUND_LOST,Round lost!,Раунд проигран!
+MATCH_WON,Victory!,Победа!
+MATCH_LOST,Defeat!,Поражение!
+RESOURCES,Resources,Ресурсы
+HP,HP,ХП
+KILLS,Kills,Убийства
+DEATHS,Deaths,Смерти
+DAMAGE_DEALT_STAT,Damage dealt,Нанесённый урон
+RESOURCES_COLLECTED,Resources collected,Собрано ресурсов
+BUILDINGS_BUILT,Buildings built,Построено зданий
+MVP_LABEL,MVP,MVP
+PRE_GAME_TITLE,Study the map!,Изучите карту!
+PRE_GAME_TIMER,Match starts in:,Матч начнётся через:
+NETWORK_CONNECTING,Connecting...,Подключение...
+NETWORK_CONNECTED,Connected,Подключено
+NETWORK_DISCONNECTED,Disconnected,Отключено
+NETWORK_RECONNECTING,Reconnecting...,Переподключение...
+NETWORK_CONNECT_FAILED,Failed to connect to server,Не удалось подключиться к серверу
+NETWORK_RECONNECT_FAILED,Reconnection failed,Переподключение не удалось
+PING_LABEL,Ping,Пинг
+SETTINGS_SENSITIVITY,Sensitivity,Чувствительность
+SETTINGS_SOUND,Sound,Звук
+SETTINGS_MUSIC,Music,Музыка
+SETTINGS_GRAPHICS,Graphics,Графика
+SETTINGS_LANGUAGE,Language,Язык
+GRAPHICS_LOW,Low,Низкое
+GRAPHICS_MEDIUM,Medium,Среднее
+GRAPHICS_HIGH,High,Высокое
+CHAT_PLACEHOLDER,Type a message...,Введите сообщение...
+QUICK_HELP,Help!,Помогите!
+QUICK_ATTACK,Attack!,Атакуем!
+QUICK_DEFEND,Defend!,Защищаемся!
+QUICK_GATHER,Gather resources!,Собираем ресурсы!
+QUICK_RETREAT,Retreat!,Отступаем!
+QUICK_GG,Good game!,Хорошая игра!
+BUILDING_WALL,Wall,Стена
+BUILDING_TURRET,Turret,Турель
+BUILDING_SPEED_PATH,Speed Path,Ускоряющая дорожка
+BUILDING_SPEED_FIELD,Speed Field,Ускоряющее поле
+BUILDING_POWER_FIELD,Power Field,Усиливающее поле
+BUILDING_STEALTH_FIELD,Stealth Field,Невидимое поле
+BUILDING_TELEPORT,Teleport,Телепорт
+AUTH_LOGIN,Log In,Войти
+AUTH_REGISTER,Register,Регистрация
+AUTH_EMAIL,Email,Email
+AUTH_PASSWORD,Password,Пароль
+AUTH_NICKNAME,Nickname,Никнейм
+AUTH_LOGIN_SUCCESS,Logged in successfully,Вход выполнен
+AUTH_REGISTER_SUCCESS,Registration successful,Регистрация успешна
+AUTH_ERROR,Authentication error,Ошибка авторизации
