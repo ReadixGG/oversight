@@ -37,7 +37,7 @@ func _ready() -> void:
 
 
 func _on_play() -> void:
-	NetworkManager.send_message(Protocol.MessageType.FIND_MATCH)
+	NetworkManager.send_find_match()
 	# TODO: switch to matchmaking screen
 
 

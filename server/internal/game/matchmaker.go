@@ -1,7 +1,6 @@
 package game
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -11,9 +10,8 @@ import (
 )
 
 const (
-	playersPerTeam = 5
+	playersPerTeam  = 5
 	playersPerMatch = playersPerTeam * 2
-	// For MVP/testing, allow matches with fewer players
 	minPlayersForMatch = 2
 )
 
@@ -21,9 +19,9 @@ type Matchmaker struct {
 	hub      *network.Hub
 	tickRate int
 
-	mu       sync.Mutex
-	queue    []*network.Client
-	matches  map[string]*Match
+	mu      sync.Mutex
+	queue   []*network.Client
+	matches map[string]*Match
 }
 
 func NewMatchmaker(hub *network.Hub, tickRate int) *Matchmaker {
@@ -48,26 +46,24 @@ func (mm *Matchmaker) Run() {
 }
 
 func (mm *Matchmaker) handleMessage(client *network.Client, data []byte) {
-	var msg protocol.Message
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return
-	}
+	msgType := protocol.DecodeMessageType(data)
+	payload := protocol.DecodePayload(data)
 
-	switch msg.Type {
+	switch msgType {
 	case protocol.MsgFindMatch:
 		mm.addToQueue(client)
 	case protocol.MsgCancelSearch:
 		mm.removeFromQueue(client)
 	case protocol.MsgSelectClass:
-		mm.handleClassSelect(client, msg.Data)
+		classType := protocol.DecodeSelectClass(payload)
+		client.Class = classType
 	default:
-		// Forward game messages to the match
 		if client.MatchID != "" {
 			mm.mu.Lock()
 			match, ok := mm.matches[client.MatchID]
 			mm.mu.Unlock()
 			if ok {
-				match.HandleMessage(client, msg)
+				match.HandleBinaryMessage(client, msgType, payload)
 			}
 		}
 	}
@@ -107,7 +103,6 @@ func (mm *Matchmaker) tryMakeMatch() {
 		return
 	}
 
-	// Take players for a match (up to playersPerMatch, minimum minPlayersForMatch)
 	count := playersPerMatch
 	if count > len(mm.queue) {
 		count = len(mm.queue)
@@ -122,13 +117,4 @@ func (mm *Matchmaker) tryMakeMatch() {
 
 	log.Printf("Match %s created with %d players", match.ID, count)
 	go match.Run()
-}
-
-func (mm *Matchmaker) handleClassSelect(client *network.Client, data map[string]interface{}) {
-	classVal, ok := data["class"]
-	if !ok {
-		return
-	}
-	classType := int(classVal.(float64))
-	client.Class = classType
 }

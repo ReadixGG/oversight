@@ -94,7 +94,7 @@ func _process_local_input(delta: float) -> void:
 			"dt": delta,
 		}
 		_pending_inputs.append(input_data)
-		NetworkManager.send_message(Protocol.MessageType.INPUT_MOVE, input_data)
+		NetworkManager.send_input_move(input_dir.x, input_dir.y, delta, _input_sequence)
 
 
 func _get_movement_input() -> Vector2:
@@ -108,12 +108,7 @@ func _process_shooting(delta: float) -> void:
 
 	if Input.is_action_pressed("shoot") and shoot_cooldown <= 0.0:
 		shoot_cooldown = shoot_rate
-		NetworkManager.send_message(Protocol.MessageType.INPUT_SHOOT, {
-			"dx": _aim_direction.x,
-			"dy": _aim_direction.y,
-			"x": position.x,
-			"y": position.y,
-		})
+		NetworkManager.send_input_shoot(_aim_direction.x, _aim_direction.y, position.x, position.y)
 
 
 func _get_aim_direction() -> Vector2:

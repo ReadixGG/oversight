@@ -1,7 +1,6 @@
 package game
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -42,7 +41,6 @@ type ProjectileState struct {
 	Age      float64
 }
 
-// Tile types for the map grid
 const (
 	TileGround    = 0
 	TileWall      = 1
@@ -64,15 +62,15 @@ type Match struct {
 	ID       string
 	Phase    int
 	Round    int
-	Score    [3]int // index by team
+	Score    [3]int
 	TickRate int
 
-	mu       sync.Mutex
-	players  []*network.Client
-	states   map[uint64]*PlayerState
+	mu      sync.Mutex
+	players []*network.Client
+	states  map[uint64]*PlayerState
 
-	projectiles   map[uint64]*ProjectileState
-	nextProjID    uint64
+	projectiles map[uint64]*ProjectileState
+	nextProjID  uint64
 
 	gameMap *GameMap
 
@@ -84,7 +82,6 @@ type Match struct {
 
 func NewMatch(players []*network.Client, tickRate int) *Match {
 	matchID := fmt.Sprintf("match_%d", time.Now().UnixNano())
-
 	seed := time.Now().UnixNano()
 	gMap := generateMap(seed)
 
@@ -127,47 +124,23 @@ func NewMatch(players []*network.Client, tickRate int) *Match {
 func (m *Match) Run() {
 	log.Printf("Match %s started (round %d)", m.ID, m.Round)
 
-	// Notify all players
-	m.broadcastToAll(protocol.Message{
-		Type: protocol.MsgMatchFound,
-		Data: map[string]interface{}{
-			"match_id": m.ID,
-		},
-		Timestamp: time.Now().UnixMilli(),
-	})
+	// Notify all players: match found
+	m.broadcastBinary(protocol.EncodeMatchFound(m.ID))
 
-	// Send spawn data to all players
+	// Send spawn data
 	m.mu.Lock()
 	for _, p := range m.players {
 		st := m.states[p.ID]
-		m.broadcastToAllUnlocked(protocol.Message{
-			Type: protocol.MsgPlayerSpawned,
-			Data: map[string]interface{}{
-				"id":    st.ID,
-				"team":  st.Team,
-				"class": st.Class,
-				"x":     st.X,
-				"y":     st.Y,
-			},
-			Timestamp: time.Now().UnixMilli(),
-		})
+		m.broadcastBinaryUnlocked(protocol.EncodePlayerSpawned(st.ID, st.Team, st.Class, st.X, st.Y))
 	}
 	m.mu.Unlock()
 
-	// Send map data to all players
-	m.broadcastToAll(protocol.Message{
-		Type: protocol.MsgMapData,
-		Data: m.gameMap.toNetworkData(),
-		Timestamp: time.Now().UnixMilli(),
-	})
+	// Send map data
+	m.broadcastBinary(m.encodeMapData())
 
-	// Pre-game phase (60 seconds for normal, shortened for MVP testing)
-	m.preGameTimer = 10.0 // 10 seconds for testing
-	m.broadcastToAll(protocol.Message{
-		Type:      protocol.MsgPreGameStart,
-		Data:      map[string]interface{}{"duration": m.preGameTimer},
-		Timestamp: time.Now().UnixMilli(),
-	})
+	// Pre-game phase
+	m.preGameTimer = 10.0
+	m.broadcastBinary(protocol.EncodePreGameStart(m.preGameTimer))
 
 	// Game loop
 	tickDuration := time.Duration(1000/m.TickRate) * time.Millisecond
@@ -197,12 +170,8 @@ func (m *Match) update(dt float64) {
 		m.preGameTimer -= dt
 		if m.preGameTimer <= 0 {
 			m.preGameTimer = 0
-			m.roundTimer = 720.0 // 12 minutes
-			m.broadcastToAllUnlocked(protocol.Message{
-				Type:      protocol.MsgRoundStart,
-				Data:      map[string]interface{}{"round": m.Round, "duration": m.roundTimer},
-				Timestamp: time.Now().UnixMilli(),
-			})
+			m.roundTimer = 720.0
+			m.broadcastBinaryUnlocked(protocol.EncodeRoundStart(m.Round, m.roundTimer))
 		}
 		return
 
@@ -218,7 +187,8 @@ func (m *Match) update(dt float64) {
 	}
 }
 
-func (m *Match) HandleMessage(client *network.Client, msg protocol.Message) {
+// HandleBinaryMessage processes a binary message from a client.
+func (m *Match) HandleBinaryMessage(client *network.Client, msgType int, payload []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -227,18 +197,16 @@ func (m *Match) HandleMessage(client *network.Client, msg protocol.Message) {
 		return
 	}
 
-	switch msg.Type {
+	switch msgType {
 	case protocol.MsgInputMove:
-		dx, _ := msg.Data["dx"].(float64)
-		dy, _ := msg.Data["dy"].(float64)
-		dtVal, _ := msg.Data["dt"].(float64)
-		seq, _ := msg.Data["seq"].(float64)
+		input := protocol.DecodeInputMove(payload)
 
 		speed := st.Speed
 		if st.Carrying {
 			speed *= 0.7
 		}
 
+		dx, dy := input.DX, input.DY
 		length := dx*dx + dy*dy
 		if length > 0 {
 			invLen := 1.0 / math.Sqrt(length)
@@ -248,17 +216,17 @@ func (m *Match) HandleMessage(client *network.Client, msg protocol.Message) {
 
 		st.VX = dx * speed
 		st.VY = dy * speed
-		st.X += st.VX * dtVal
-		st.Y += st.VY * dtVal
-		st.LastSeq = int(seq)
+		st.X += st.VX * input.DT
+		st.Y += st.VY * input.DT
+		st.LastSeq = input.Seq
 
 	case protocol.MsgInputShoot:
 		if st.ShootCD > 0 {
 			return
 		}
-		dx, _ := msg.Data["dx"].(float64)
-		dy, _ := msg.Data["dy"].(float64)
+		input := protocol.DecodeInputShoot(payload)
 
+		dx, dy := input.DX, input.DY
 		length := dx*dx + dy*dy
 		if length > 0 {
 			invLen := 1.0 / math.Sqrt(length)
@@ -273,34 +241,23 @@ func (m *Match) HandleMessage(client *network.Client, msg protocol.Message) {
 		m.spawnProjectile(st, dx, dy)
 
 	case protocol.MsgInputBuild:
-		// TODO: building placement
+		// TODO
 	case protocol.MsgInputCollect:
-		// TODO: resource collection
+		// TODO
 	}
 }
 
 func (m *Match) endRound() {
-	// Determine winner by remaining HP of nexus or total team HP
-	winner := protocol.TeamAlpha // placeholder logic
+	winner := protocol.TeamAlpha // placeholder
 	m.Score[winner]++
 
-	m.broadcastToAllUnlocked(protocol.Message{
-		Type: protocol.MsgRoundEnd,
-		Data: map[string]interface{}{
-			"winner": winner,
-			"round":  m.Round,
-			"score_alpha": m.Score[protocol.TeamAlpha],
-			"score_bravo": m.Score[protocol.TeamBravo],
-		},
-		Timestamp: time.Now().UnixMilli(),
-	})
+	m.broadcastBinaryUnlocked(protocol.EncodeRoundEnd(winner, m.Round, m.Score[protocol.TeamAlpha], m.Score[protocol.TeamBravo]))
 
 	if m.Score[winner] >= 2 {
 		m.endMatch(winner)
 		return
 	}
 
-	// Next round
 	m.Round++
 	m.swapTeams()
 	m.spawnPlayers()
@@ -308,16 +265,7 @@ func (m *Match) endRound() {
 }
 
 func (m *Match) endMatch(winner int) {
-	m.broadcastToAllUnlocked(protocol.Message{
-		Type: protocol.MsgMatchEnd,
-		Data: map[string]interface{}{
-			"winner":      winner,
-			"score_alpha": m.Score[protocol.TeamAlpha],
-			"score_bravo": m.Score[protocol.TeamBravo],
-		},
-		Timestamp: time.Now().UnixMilli(),
-	})
-
+	m.broadcastBinaryUnlocked(protocol.EncodeMatchEnd(winner, m.Score[protocol.TeamAlpha], m.Score[protocol.TeamBravo]))
 	close(m.stopCh)
 }
 
@@ -355,23 +303,24 @@ func (m *Match) spawnPlayers() {
 	}
 }
 
-func (m *Match) broadcastToAll(msg protocol.Message) {
+// --- Broadcasting ---
+
+func (m *Match) broadcastBinary(data []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.broadcastToAllUnlocked(msg)
+	m.broadcastBinaryUnlocked(data)
 }
 
-func (m *Match) broadcastToAllUnlocked(msg protocol.Message) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return
-	}
-
+func (m *Match) broadcastBinaryUnlocked(data []byte) {
 	ids := make([]uint64, 0, len(m.players))
 	for _, p := range m.players {
 		ids = append(ids, p.ID)
 	}
 	m.players[0].Hub.SendToClients(ids, data)
+}
+
+func (m *Match) sendToPlayer(playerID uint64, data []byte) {
+	m.players[0].Hub.SendToClients([]uint64{playerID}, data)
 }
 
 // --- Projectile system ---
@@ -392,21 +341,11 @@ func (m *Match) spawnProjectile(shooter *PlayerState, dx, dy float64) {
 	}
 	m.projectiles[proj.ID] = proj
 
-	m.broadcastToAllUnlocked(protocol.Message{
-		Type: protocol.MsgProjectileSpawned,
-		Data: map[string]interface{}{
-			"id":     proj.ID,
-			"owner":  proj.OwnerID,
-			"team":   proj.Team,
-			"x":      proj.X,
-			"y":      proj.Y,
-			"dx":     proj.DX,
-			"dy":     proj.DY,
-			"speed":  proj.Speed,
-			"damage": proj.Damage,
-		},
-		Timestamp: time.Now().UnixMilli(),
-	})
+	m.broadcastBinaryUnlocked(protocol.EncodeProjectileSpawned(
+		proj.ID, proj.OwnerID, proj.Team,
+		proj.X, proj.Y, proj.DX, proj.DY,
+		proj.Speed, proj.Damage,
+	))
 }
 
 func (m *Match) updateProjectiles(dt float64) {
@@ -422,7 +361,6 @@ func (m *Match) updateProjectiles(dt float64) {
 			continue
 		}
 
-		// Check wall collision
 		if m.gameMap != nil {
 			tileX := int(proj.X) / m.gameMap.TileSize
 			tileY := int(proj.Y) / m.gameMap.TileSize
@@ -434,7 +372,6 @@ func (m *Match) updateProjectiles(dt float64) {
 			}
 		}
 
-		// Check hit on players
 		for _, st := range m.states {
 			if st.Dead || st.Team == proj.Team {
 				continue
@@ -445,29 +382,13 @@ func (m *Match) updateProjectiles(dt float64) {
 				st.HP -= proj.Damage
 				toRemove = append(toRemove, id)
 
-				m.broadcastToAllUnlocked(protocol.Message{
-					Type: protocol.MsgDamageDealt,
-					Data: map[string]interface{}{
-						"target":  st.ID,
-						"attacker": proj.OwnerID,
-						"amount":  proj.Damage,
-					},
-					Timestamp: time.Now().UnixMilli(),
-				})
+				m.broadcastBinaryUnlocked(protocol.EncodeDamageDealt(st.ID, proj.OwnerID, proj.Damage))
 
 				if st.HP <= 0 {
 					st.HP = 0
 					st.Dead = true
 					st.RespawnTimer = 5.0
-
-					m.broadcastToAllUnlocked(protocol.Message{
-						Type: protocol.MsgPlayerDied,
-						Data: map[string]interface{}{
-							"id":     st.ID,
-							"killer": proj.OwnerID,
-						},
-						Timestamp: time.Now().UnixMilli(),
-					})
+					m.broadcastBinaryUnlocked(protocol.EncodePlayerDied(st.ID, proj.OwnerID))
 				}
 				break
 			}
@@ -494,7 +415,6 @@ func (m *Match) updateRespawns(dt float64) {
 			st.HP = st.MaxHP
 			st.Carrying = false
 
-			// Respawn at base
 			if st.Team == protocol.TeamAlpha {
 				st.X = 100 + rand.Float64()*100
 				st.Y = 400 + rand.Float64()*200
@@ -503,54 +423,29 @@ func (m *Match) updateRespawns(dt float64) {
 				st.Y = 400 + rand.Float64()*200
 			}
 
-			m.broadcastToAllUnlocked(protocol.Message{
-				Type: protocol.MsgPlayerRespawned,
-				Data: map[string]interface{}{
-					"id": st.ID,
-					"x":  st.X,
-					"y":  st.Y,
-				},
-				Timestamp: time.Now().UnixMilli(),
-			})
+			m.broadcastBinaryUnlocked(protocol.EncodePlayerRespawned(st.ID, st.X, st.Y))
 		}
 	}
 }
 
-// --- Fog of War: filter snapshot per team ---
-
-func (m *Match) sendSnapshot() {
-	// Build per-team snapshots (fog of war filtering)
-	for _, p := range m.players {
-		visiblePlayers := make([]map[string]interface{}, 0, len(m.states))
-		for _, st := range m.states {
-			if st.Team == p.Team {
-				// Always show teammates
-				visiblePlayers = append(visiblePlayers, playerToMap(st))
-			} else if !st.Dead {
-				// Only show enemy if within vision range of any teammate
-				if m.isVisibleByTeam(st.X, st.Y, p.Team) {
-					visiblePlayers = append(visiblePlayers, playerToMap(st))
-				}
-			}
-		}
-
-		msg := protocol.Message{
-			Type: protocol.MsgGameSnapshot,
-			Data: map[string]interface{}{
-				"players": visiblePlayers,
-				"timer":   m.roundTimer,
-			},
-			Timestamp: time.Now().UnixMilli(),
-		}
-		data, err := json.Marshal(msg)
-		if err != nil {
-			continue
-		}
-		p.Hub.SendToClients([]uint64{p.ID}, data)
-	}
-}
+// --- Fog of War: per-team snapshots ---
 
 const visionRange = 400.0
+
+func (m *Match) sendSnapshot() {
+	for _, p := range m.players {
+		visible := make([]protocol.PlayerSnapshotData, 0, len(m.states))
+		for _, st := range m.states {
+			if st.Team == p.Team {
+				visible = append(visible, toSnapshotData(st))
+			} else if !st.Dead && m.isVisibleByTeam(st.X, st.Y, p.Team) {
+				visible = append(visible, toSnapshotData(st))
+			}
+		}
+		data := protocol.EncodeGameSnapshot(visible, m.roundTimer)
+		m.sendToPlayer(p.ID, data)
+	}
+}
 
 func (m *Match) isVisibleByTeam(x, y float64, team int) bool {
 	for _, st := range m.states {
@@ -565,26 +460,36 @@ func (m *Match) isVisibleByTeam(x, y float64, team int) bool {
 	return false
 }
 
-func playerToMap(st *PlayerState) map[string]interface{} {
-	return map[string]interface{}{
-		"id":       st.ID,
-		"x":        st.X,
-		"y":        st.Y,
-		"vx":       st.VX,
-		"vy":       st.VY,
-		"hp":       st.HP,
-		"carrying": st.Carrying,
-		"seq":      st.LastSeq,
+func toSnapshotData(st *PlayerState) protocol.PlayerSnapshotData {
+	return protocol.PlayerSnapshotData{
+		ID:       st.ID,
+		X:        st.X,
+		Y:        st.Y,
+		VX:       st.VX,
+		VY:       st.VY,
+		HP:       st.HP,
+		Carrying: st.Carrying,
+		Seq:      st.LastSeq,
 	}
 }
 
-// --- Map generation ---
+// --- Map ---
+
+func (m *Match) encodeMapData() []byte {
+	flat := make([]byte, m.gameMap.Width*m.gameMap.Height)
+	for y := 0; y < m.gameMap.Height; y++ {
+		for x := 0; x < m.gameMap.Width; x++ {
+			flat[y*m.gameMap.Width+x] = byte(m.gameMap.Tiles[y][x])
+		}
+	}
+	return protocol.EncodeMapData(m.gameMap.Width, m.gameMap.Height, m.gameMap.TileSize, flat, m.gameMap.Seed)
+}
 
 func generateMap(seed int64) *GameMap {
 	rng := rand.New(rand.NewSource(seed))
 
-	width := 64  // tiles
-	height := 32 // tiles
+	width := 64
+	height := 32
 	tileSize := 32
 
 	tiles := make([][]int, height)
@@ -592,7 +497,6 @@ func generateMap(seed int64) *GameMap {
 		tiles[y] = make([]int, width)
 	}
 
-	// Fill borders with walls
 	for x := 0; x < width; x++ {
 		tiles[0][x] = TileWall
 		tiles[height-1][x] = TileWall
@@ -602,7 +506,6 @@ func generateMap(seed int64) *GameMap {
 		tiles[y][width-1] = TileWall
 	}
 
-	// Place bases
 	for y := height/2 - 3; y <= height/2+3; y++ {
 		for x := 1; x <= 4; x++ {
 			tiles[y][x] = TileBaseAlpha
@@ -610,7 +513,6 @@ func generateMap(seed int64) *GameMap {
 		}
 	}
 
-	// Scatter walls symmetrically (mirror left-right for fairness)
 	numWallClusters := 8 + rng.Intn(6)
 	for i := 0; i < numWallClusters; i++ {
 		cx := 6 + rng.Intn(width/2-8)
@@ -625,7 +527,6 @@ func generateMap(seed int64) *GameMap {
 					if tiles[wy][wx] == TileGround {
 						tiles[wy][wx] = TileWall
 					}
-					// Mirror
 					mx := width - 1 - wx
 					if tiles[wy][mx] == TileGround {
 						tiles[wy][mx] = TileWall
@@ -635,7 +536,6 @@ func generateMap(seed int64) *GameMap {
 		}
 	}
 
-	// Scatter resources symmetrically
 	numResources := 10 + rng.Intn(8)
 	for i := 0; i < numResources; i++ {
 		rx := 6 + rng.Intn(width/2-8)
@@ -653,22 +553,6 @@ func generateMap(seed int64) *GameMap {
 		TileSize: tileSize,
 		Tiles:    tiles,
 		Seed:     seed,
-	}
-}
-
-func (gm *GameMap) toNetworkData() map[string]interface{} {
-	flat := make([]int, gm.Width*gm.Height)
-	for y := 0; y < gm.Height; y++ {
-		for x := 0; x < gm.Width; x++ {
-			flat[y*gm.Width+x] = gm.Tiles[y][x]
-		}
-	}
-	return map[string]interface{}{
-		"width":     gm.Width,
-		"height":    gm.Height,
-		"tile_size": gm.TileSize,
-		"tiles":     flat,
-		"seed":      gm.Seed,
 	}
 }
 
@@ -751,6 +635,3 @@ func classProjectileSpeed(class int) float64 {
 		return 600
 	}
 }
-
-// Ensure math.Sqrt is used (imported above)
-var _ = math.Sqrt

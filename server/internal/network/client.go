@@ -1,7 +1,6 @@
 package network
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -14,7 +13,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 4096
+	maxMessageSize = 8192
 	sendBufferSize = 256
 )
 
@@ -22,22 +21,20 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for dev; restrict in production
+		return true
 	},
 }
 
-// Client represents a single WebSocket connection.
 type Client struct {
 	ID   uint64
 	Hub  *Hub
 	Conn *websocket.Conn
 	Send chan []byte
 
-	// Game state
-	MatchID   string
-	PlayerID  int
-	Team      int
-	Class     int
+	MatchID  string
+	PlayerID int
+	Team     int
+	Class    int
 }
 
 func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
@@ -81,19 +78,15 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// Handle ping/pong at network level
-		var msg protocol.Message
-		if err := json.Unmarshal(message, &msg); err != nil {
+		msgType := protocol.DecodeMessageType(message)
+
+		if msgType == protocol.MsgPing {
+			c.SendBinary(protocol.EncodePong())
 			continue
 		}
 
-		if msg.Type == protocol.MsgPing {
-			c.sendPong()
-			continue
-		}
-
-		if msg.Type == protocol.MsgHandshake {
-			c.sendHandshakeOK()
+		if msgType == protocol.MsgHandshake {
+			c.SendBinary(protocol.EncodeHandshakeOK(c.ID))
 			continue
 		}
 
@@ -119,7 +112,7 @@ func (c *Client) writePump() {
 				return
 			}
 
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
+			w, err := c.Conn.NextWriter(websocket.BinaryMessage)
 			if err != nil {
 				return
 			}
@@ -137,31 +130,9 @@ func (c *Client) writePump() {
 	}
 }
 
-func (c *Client) SendJSON(msg protocol.Message) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return
-	}
+func (c *Client) SendBinary(data []byte) {
 	select {
 	case c.Send <- data:
 	default:
 	}
-}
-
-func (c *Client) sendPong() {
-	c.SendJSON(protocol.Message{
-		Type:      protocol.MsgPong,
-		Data:      map[string]interface{}{},
-		Timestamp: time.Now().UnixMilli(),
-	})
-}
-
-func (c *Client) sendHandshakeOK() {
-	c.SendJSON(protocol.Message{
-		Type: protocol.MsgHandshakeOK,
-		Data: map[string]interface{}{
-			"player_id": c.ID,
-		},
-		Timestamp: time.Now().UnixMilli(),
-	})
 }

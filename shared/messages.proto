@@ -1,0 +1,174 @@
+syntax = "proto3";
+package oversight;
+option go_package = "oversight-server/internal/protocol/pb";
+
+// Wire envelope: every message has a type tag + payload
+message Envelope {
+  uint32 msg_type = 1;
+  bytes  payload  = 2;
+  int64  timestamp = 3;
+}
+
+// --- Connection ---
+
+message Handshake {
+  string version = 1;
+}
+
+message HandshakeOK {
+  uint64 player_id = 1;
+}
+
+// Ping/Pong are just Envelope with msg_type 4/5 and empty payload
+
+// --- Lobby ---
+
+message FindMatch {}
+
+message MatchFound {
+  string match_id = 1;
+}
+
+message CancelSearch {}
+
+message SelectClass {
+  uint32 class_type = 1;
+}
+
+// --- Game Input (client -> server) ---
+
+message InputMove {
+  float dx  = 1;
+  float dy  = 2;
+  float dt  = 3;
+  uint32 seq = 4;
+}
+
+message InputShoot {
+  float dx = 1;
+  float dy = 2;
+  float x  = 3;
+  float y  = 4;
+}
+
+message InputBuild {
+  uint32 building_type = 1;
+  float x = 2;
+  float y = 3;
+}
+
+message InputCollect {
+  uint64 resource_id = 1;
+}
+
+// --- Game State (server -> client) ---
+
+message PlayerSnapshot {
+  uint64 id       = 1;
+  float  x        = 2;
+  float  y        = 3;
+  float  vx       = 4;
+  float  vy       = 5;
+  float  hp       = 6;
+  bool   carrying = 7;
+  uint32 seq      = 8;
+}
+
+message GameSnapshot {
+  repeated PlayerSnapshot players = 1;
+  float timer = 2;
+}
+
+message PlayerSpawned {
+  uint64 id        = 1;
+  uint32 team      = 2;
+  uint32 class_type = 3;
+  float  x         = 4;
+  float  y         = 5;
+}
+
+message PlayerDied {
+  uint64 id     = 1;
+  uint64 killer = 2;
+}
+
+message PlayerRespawned {
+  uint64 id = 1;
+  float  x  = 2;
+  float  y  = 3;
+}
+
+message DamageDealt {
+  uint64 target   = 1;
+  uint64 attacker = 2;
+  float  amount   = 3;
+}
+
+message ProjectileSpawned {
+  uint64 id     = 1;
+  uint64 owner  = 2;
+  uint32 team   = 3;
+  float  x      = 4;
+  float  y      = 5;
+  float  dx     = 6;
+  float  dy     = 7;
+  float  speed  = 8;
+  float  damage = 9;
+}
+
+// --- Map ---
+
+message MapData {
+  uint32 width     = 1;
+  uint32 height    = 2;
+  uint32 tile_size = 3;
+  bytes  tiles     = 4;  // packed: one byte per tile
+  int64  seed      = 5;
+}
+
+// --- Round ---
+
+message RoundStart {
+  uint32 round    = 1;
+  float  duration = 2;
+}
+
+message RoundEnd {
+  uint32 winner      = 1;
+  uint32 round       = 2;
+  uint32 score_alpha = 3;
+  uint32 score_bravo = 4;
+}
+
+message MatchEnd {
+  uint32 winner      = 1;
+  uint32 score_alpha = 2;
+  uint32 score_bravo = 3;
+}
+
+message PreGameStart {
+  float duration = 1;
+}
+
+// --- Coach ---
+
+message CoachDraw {
+  repeated float points = 1;  // x1,y1,x2,y2,...
+  uint32 draw_type = 2;       // 0=line, 1=arrow, 2=zone
+}
+
+message CoachPing {
+  float  x         = 1;
+  float  y         = 2;
+  uint32 ping_type = 3;  // 0=danger, 1=target, 2=resource
+}
+
+// --- Chat ---
+
+message ChatMessage {
+  string text = 1;
+}
+
+message QuickChat {
+  uint32 phrase_id = 1;
+}
